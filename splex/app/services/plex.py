@@ -1,7 +1,7 @@
 import requests
 import urllib3
 from plexapi.server import PlexServer
-from confighandler import read_config
+from splex.app.services.confighandler import read_config
 
 
 class PlexService:

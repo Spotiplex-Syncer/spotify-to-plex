@@ -1,5 +1,5 @@
 import json
-from confighandler import read_config
+from splex.app.services.confighandler import read_config
 import requests
 # test
 
