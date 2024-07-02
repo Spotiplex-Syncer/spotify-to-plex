@@ -1,1 +1,1 @@
-''' Init for spotiplex module '''
+"""Init for spotiplex module"""

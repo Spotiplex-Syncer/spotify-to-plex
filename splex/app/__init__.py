@@ -1,62 +1,46 @@
 from flask import Flask
-from flask_socketio import SocketIO
 from flask_login import LoginManager
-from services.confighandler import read_config  # Assuming you have a custom config handler
-from celery import Celery
+from authlib.integrations.flask_client import OAuth
+from .models.models import (
+    db,
+)  # Adjust the import path for your User model and database setup
+from .services.confighandler import read_config  # Adjust if necessary
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
 
-def create_celery_app(app=None):
-    """
-    Initialize Celery helper function.
-    """
-    app = app or create_app('config.py')
-    celery = Celery(app.import_name, broker=app.config['CELERY_BROKER_URL'])
-    celery.conf.update(app.config)
-    
-    class ContextTask(celery.Task):
-        def __call__(self, *args, **kwargs):
-            with app.app_context():
-                return self.run(*args, **kwargs)
-                
-    celery.Task = ContextTask
-    return celery
 
-def create_app(config_filename):
-    app = Flask(__name__, instance_relative_config=True)
+def create_app(config_filename="../instance/config.py"):
+    app = Flask(__name__)
     app.config.from_pyfile(config_filename)
 
-    # Initialize plugins
-    socketio = SocketIO(app)
+    # Initialize database
+    db.init_app(app)
+    with app.app_context():
+        db.create_all()
+
+    # Setup Flask-Login
     login_manager = LoginManager()
+    login_manager.login_view = "auth.show_login"
     login_manager.init_app(app)
 
-    # Celery configuration
-    app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
-    app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
-    celery = create_celery_app(app)
+    # OAuth Setup with Direct Config Access
+    oauth = OAuth(app)
+    oauth.register(
+        name="spotify",
+        client_id=app.config["SPOTIFY_CLIENT_ID"],
+        client_secret=app.config["SPOTIFY_CLIENT_SECRET"],
+        access_token_url="https://accounts.spotify.com/api/token",
+        authorize_url="https://accounts.spotify.com/authorize",
+        api_base_url="https://api.spotify.com/v1",
+        client_kwargs={
+            "scope": "user-read-private playlist-modify-public playlist-modify-private"
+        },
+        redirect_uri=app.config["SPOTIFY_REDIRECT_URI"],
+    )
 
-    # Register Blueprints, if you have any
-    # from .views import main as main_blueprint
-    # app.register_blueprint(main_blueprint)
+    # Ensure OAuth and other services are initialized after Flask-Login and DB
+    from .routes.auth_routes import auth_bp
 
-    # SocketIO events, example
-    @socketio.on('connect')
-    def test_connect():
-        print('Client connected')
+    app.register_blueprint(auth_bp)
 
-    @socketio.on('disconnect')
-    def test_disconnect():
-        print('Client disconnected')
-
-    # Flask-Login configuration
-    @login_manager.user_loader
-    def load_user(user_id):
-        # Your user loading logic here
-        return None
-
-    return app, socketio, celery
-
-# If you are using factory pattern, the celery worker needs to import the celery instance
-app, socketio, celery = create_app('config.py')
-
-if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    return app
